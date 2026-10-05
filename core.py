@@ -31,6 +31,9 @@ DEFAULTS = {
     "alpha": 100, "aspect": "1:1", "res": "4k",
 }
 MAX_DIMENSION = 65535
+MAX_FRAMES = 99999
+MAX_PADDING = 8
+DEFAULT_PADDING = 4
 JPEG_QUALITY = 95
 PNG_COMPRESSION = 6
 
@@ -64,6 +67,7 @@ class Settings:
     channels: str = "RGBA"
     color: str = "#000000"
     alpha: float = 100.0
+    padding: int = 0         # zero-pad frame numbers to this many digits; 0 = no padding
     out_dir: str = "output"
 
 
@@ -113,13 +117,18 @@ def get_dimensions(s: Settings):
     return w, h
 
 
-def frame_filename(s: Settings, index: int, pad_len: int) -> str:
+def effective_padding(s: Settings) -> int:
+    """Digits actually used for the frame number (0 = no padding).
+
+    Never less than the digits needed for the last frame, so the numbers stay
+    the same width and sort correctly.
+    """
+    return max(s.padding, len(str(s.frames))) if s.padding > 0 else 0
+
+
+def frame_filename(s: Settings, index: int) -> str:
     ext = FORMATS[s.file_type]["ext"]
-    return f"{s.name}_{resolution_label(s)}_{str(index).zfill(pad_len)}.{ext}"
-
-
-def pad_length(frames: int) -> int:
-    return len(str(frames))
+    return f"{s.name}_{resolution_label(s)}_{str(index).zfill(effective_padding(s))}.{ext}"
 
 
 _ILLEGAL_NAME_CHARS = set('<>:"/\\|?*')
@@ -127,8 +136,10 @@ _ILLEGAL_NAME_CHARS = set('<>:"/\\|?*')
 
 def validate(s: Settings):
     """Return (width, height). Raises ValueError with a user-readable message."""
-    if s.frames < 1:
-        raise ValueError("Frames must be at least 1.")
+    if not 1 <= s.frames <= MAX_FRAMES:
+        raise ValueError(f"Frames must be between 1 and {MAX_FRAMES}.")
+    if not 0 <= s.padding <= MAX_PADDING:
+        raise ValueError(f"Padding must be between 1 and {MAX_PADDING} digits.")
     if not s.name.strip():
         raise ValueError("Name is required.")
     if _ILLEGAL_NAME_CHARS & set(s.name):
@@ -226,9 +237,8 @@ def existing_files(s: Settings):
     """Names of frames that already exist in the output folder."""
     if not os.path.isdir(s.out_dir):
         return []
-    pad = pad_length(s.frames)
     return [
-        n for n in (frame_filename(s, i, pad) for i in range(1, s.frames + 1))
+        n for n in (frame_filename(s, i) for i in range(1, s.frames + 1))
         if os.path.exists(os.path.join(s.out_dir, n))
     ]
 
@@ -268,14 +278,13 @@ def generate(
             f"{free / 1e9:.2f} GB free."
         )
 
-    pad = pad_length(s.frames)
     done = 0
     lock = threading.Lock()
 
     def write_frame(i: int):
         if cancel.is_set():
             return False
-        path = os.path.join(s.out_dir, frame_filename(s, i, pad))
+        path = os.path.join(s.out_dir, frame_filename(s, i))
         with open(path, "wb") as f:
             f.write(data)
         return True

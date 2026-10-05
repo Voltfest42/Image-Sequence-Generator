@@ -40,6 +40,39 @@ assert a.channels_var.get() in ("RGB",)       # stays at RGB (was valid)
 a.channels_var.set("RGBA"); a._refresh()
 assert a.alpha_slider.cget("state") == "normal"
 
+# --- numeric-only entries ---------------------------------------------------
+def typed(entry, var, text):
+    """Type text one character at a time, like a keyboard."""
+    var.set("")
+    for ch in text:
+        entry.insert("end", ch)
+    return var.get()
+
+assert typed(a.frames_entry, a.frames_var, "1a2b3-4.5 ") == "12345"
+assert typed(a.frames_entry, a.frames_var, "123456789") == "12345"       # length cap
+a.frames_entry.delete(0, "end"); a.frames_entry.insert(0, "12ab")         # a paste is rejected whole
+assert a.frames_var.get() == "", a.frames_var.get()
+assert typed(a.pad_entry, a.pad_var, "0") == ""                           # 1..MAX_PADDING only
+assert typed(a.pad_entry, a.pad_var, "9") == ""
+assert typed(a.pad_entry, a.pad_var, "x") == ""
+assert typed(a.pad_entry, a.pad_var, "12") == "1"                         # single digit only
+assert typed(a.pad_entry, a.pad_var, "8") == "8"
+a.pad_var.set("4")
+a.res_var.set("Custom"); a._refresh()
+assert typed(a.cw_entry, a.cw_var, "12ab8") == "128"
+a.cw_var.set(""); a.res_var.set("4k"); a._refresh()
+a.frames_var.set("")
+
+# --- zero-padding checkbox ---------------------------------------------------
+assert a.pad_on_var.get() and a.pad_entry.cget("state") == "normal"
+a.pad_on_var.set(False); a._refresh()
+assert a.pad_entry.cget("state") == "disabled"
+a.pad_on_var.set(True); a._refresh()
+a.pad_var.set(""); a.name_var.set("zz"); a.frames_var.set("5")
+a._on_go()
+assert "padding" in a.status_label.cget("text").lower(), a.status_label.cget("text")
+a.pad_var.set("4"); a.name_var.set(""); a.frames_var.set("")
+
 # --- validation messages ---------------------------------------------------
 a._on_go(); pump(a, 0.1)
 assert "Name is required" in a.status_label.cget("text"), a.status_label.cget("text")
@@ -66,7 +99,7 @@ with tempfile.TemporaryDirectory() as d:
     print("status:", a.status_label.cget("text"))
     files = sorted(os.listdir(out))
     print(files)
-    assert files == [f"mask_128x64_{i}.exr" for i in range(1, 6)], files
+    assert files == [f"mask_128x64_000{i}.exr" for i in range(1, 6)], files   # default: 4 digits
     assert "Done" in a.status_label.cget("text")
 
 a.destroy()

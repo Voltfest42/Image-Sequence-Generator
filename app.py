@@ -2,6 +2,7 @@
 
 import os
 import queue
+import re
 import sys
 import threading
 import tkinter as tk
@@ -86,7 +87,8 @@ class App(ctk.CTk):
         label(1, "Frames *")
         self.frames_var = tk.StringVar()
         self.frames_entry = ctk.CTkEntry(body, textvariable=self.frames_var, width=110,
-                                         placeholder_text="e.g. 100")
+                                         placeholder_text="e.g. 100",
+                                         **self._numeric_only(len(str(core.MAX_FRAMES))))
         self.frames_entry.grid(row=1, column=1, sticky="w", pady=5)
 
         # Resolution (+ custom W x H)
@@ -101,10 +103,11 @@ class App(ctk.CTk):
         self.res_menu.pack(side="left")
         self.custom_frame = ctk.CTkFrame(res_row, fg_color="transparent")
         self.cw_var, self.ch_var = tk.StringVar(), tk.StringVar()
+        dim_digits = len(str(core.MAX_DIMENSION))
         self.cw_entry = ctk.CTkEntry(self.custom_frame, textvariable=self.cw_var, width=70,
-                                     placeholder_text="width")
+                                     placeholder_text="width", **self._numeric_only(dim_digits))
         self.ch_entry = ctk.CTkEntry(self.custom_frame, textvariable=self.ch_var, width=70,
-                                     placeholder_text="height")
+                                     placeholder_text="height", **self._numeric_only(dim_digits))
         self.cw_entry.pack(side="left", padx=(12, 0))
         ctk.CTkLabel(self.custom_frame, text="×", width=18).pack(side="left")
         self.ch_entry.pack(side="left")
@@ -163,10 +166,25 @@ class App(ctk.CTk):
         self.alpha_label = ctk.CTkLabel(alpha_row, text="100", width=90, anchor="w")
         self.alpha_label.pack(side="left", padx=10)
 
+        # Zero padding
+        label(9, "Zero padding")
+        pad_row = ctk.CTkFrame(body, fg_color="transparent")
+        pad_row.grid(row=9, column=1, columnspan=2, sticky="w", pady=5)
+        self.pad_on_var = tk.BooleanVar(value=True)
+        self.pad_check = ctk.CTkCheckBox(pad_row, text="Pad frame numbers", width=150,
+                                         variable=self.pad_on_var, command=self._refresh)
+        self.pad_check.pack(side="left")
+        self.pad_var = tk.StringVar(value=str(core.DEFAULT_PADDING))
+        self.pad_entry = ctk.CTkEntry(pad_row, textvariable=self.pad_var, width=44, justify="center",
+                                      **self._numeric_only(1, pattern=f"[1-{core.MAX_PADDING}]"))
+        self.pad_entry.pack(side="left", padx=(6, 6))
+        self.pad_label = ctk.CTkLabel(pad_row, text="", anchor="w", text_color=("gray35", "gray65"))
+        self.pad_label.pack(side="left")
+
         # Output directory
-        label(9, "Output folder")
+        label(10, "Output folder")
         out_row = ctk.CTkFrame(body, fg_color="transparent")
-        out_row.grid(row=9, column=1, columnspan=2, sticky="ew", pady=5)
+        out_row.grid(row=10, column=1, columnspan=2, sticky="ew", pady=5)
         out_row.grid_columnconfigure(0, weight=1)
         self.out_var = tk.StringVar(value=os.path.join(app_dir(), "output"))
         self.out_entry = ctk.CTkEntry(out_row, textvariable=self.out_var)
@@ -197,8 +215,14 @@ class App(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
 
         for var in (self.name_var, self.frames_var, self.cw_var, self.ch_var,
-                    self.aspect_var, self.color_var, self.out_var):
+                    self.aspect_var, self.color_var, self.out_var, self.pad_var):
             var.trace_add("write", lambda *_: self._refresh())
+
+    def _numeric_only(self, max_len: int, pattern: str = r"\d"):
+        """Entry kwargs that reject every keystroke/paste that isn't a short run of digits."""
+        regex = re.compile(rf"(?:{pattern}){{0,{max_len}}}")
+        check = self.register(lambda proposed: regex.fullmatch(proposed) is not None)
+        return {"validate": "key", "validatecommand": (check, "%P")}
 
     # ------------------------------------------------------- dependent state
 
@@ -239,8 +263,18 @@ class App(ctk.CTk):
                   self.hex_entry, self.out_entry):
             w.configure(state=normal)
         for w in (self.res_menu, self.type_menu, self.depth_menu, self.channels_menu,
-                  self.swatch, self.browse_btn):
+                  self.swatch, self.browse_btn, self.pad_check):
             w.configure(state=normal)
+
+        pad_on = self.pad_on_var.get()
+        self.pad_entry.configure(state="normal" if (pad_on and not busy) else "disabled")
+        pad_txt = self.pad_var.get()
+        if not pad_on:
+            self.pad_label.configure(text="digits  (off: 1, 2, 3…)")
+        elif pad_txt:
+            self.pad_label.configure(text=f"digits  (e.g. {'1'.zfill(int(pad_txt))})")
+        else:
+            self.pad_label.configure(text=f"digits  (1-{core.MAX_PADDING})")
 
         # swatch follows the hex field when it holds a valid color
         try:
@@ -250,7 +284,7 @@ class App(ctk.CTk):
             pass
 
         for w in (self.name_entry, self.frames_entry, self.cw_entry, self.ch_entry,
-                  self.hex_entry, self.out_entry):
+                  self.hex_entry, self.out_entry, self.pad_entry):
             w.configure(border_color=self._default_border)
 
         self.open_btn.configure(state="normal" if os.path.isdir(self._resolve_out()) else "disabled")
@@ -264,14 +298,17 @@ class App(ctk.CTk):
         try:
             s = self._collect(flag=False)
             w, h = core.validate(s)
-            pad = core.pad_length(s.frames)
-            first, last = core.frame_filename(s, 1, pad), core.frame_filename(s, s.frames, pad)
+            first, last = core.frame_filename(s, 1), core.frame_filename(s, s.frames)
             names = first if s.frames == 1 else f"{first} … {last}"
             mem = core.frame_buffer_bytes(s, w, h) / (1024 ** 2)
             mem_txt = f"{mem / 1024:.1f} GB" if mem >= 1024 else f"{mem:.0f} MB"
+            note = ""
+            if s.padding and core.effective_padding(s) > s.padding:
+                note = (f"\nPadding raised to {core.effective_padding(s)} digits "
+                        f"so {s.frames} frames fit.")
             self.info_label.configure(
                 text=f"{w} × {h} px · {s.frames} frame{'s' if s.frames != 1 else ''}\n"
-                     f"{names}\nUses about {mem_txt} of memory while encoding.")
+                     f"{names}{note}\nUses about {mem_txt} of memory while encoding.")
         except ValueError:
             self.info_label.configure(text="")
 
@@ -293,16 +330,22 @@ class App(ctk.CTk):
             fail(self.name_entry, "Name is required.")
 
         frames_txt = self.frames_var.get().strip()
-        if not frames_txt.isdigit() or int(frames_txt) < 1:
-            fail(self.frames_entry, "Frames is required and must be a whole number of at least 1.")
+        if not frames_txt.isdigit() or not 1 <= int(frames_txt) <= core.MAX_FRAMES:
+            fail(self.frames_entry, f"Frames is required (a whole number, 1-{core.MAX_FRAMES}).")
+
+        padding = 0
+        if self.pad_on_var.get():
+            if not self.pad_var.get().isdigit() or not 1 <= int(self.pad_var.get()) <= core.MAX_PADDING:
+                fail(self.pad_entry, f"Enter a padding of 1-{core.MAX_PADDING} digits, or untick Zero padding.")
+            padding = int(self.pad_var.get())
 
         res = self.res_var.get()
         cw = ch = 0
         if res == core.CUSTOM_RES:
             if not self.cw_var.get().strip().isdigit():
-                fail(self.cw_entry, "Custom width must be a whole number of pixels.")
+                fail(self.cw_entry, "Enter a custom width in pixels.")
             if not self.ch_var.get().strip().isdigit():
-                fail(self.ch_entry, "Custom height must be a whole number of pixels.")
+                fail(self.ch_entry, "Enter a custom height in pixels.")
             cw, ch = int(self.cw_var.get()), int(self.ch_var.get())
         else:
             try:
@@ -320,7 +363,7 @@ class App(ctk.CTk):
             frames=int(frames_txt), name=name, res=res, custom_w=cw, custom_h=ch,
             aspect=self.aspect_var.get(), file_type=file_type,
             depth=depth_from_label(self.depth_var.get()), channels=self.channels_var.get(),
-            color=self.color_var.get(), alpha=self.alpha_var.get(), out_dir=self._resolve_out(),
+            color=self.color_var.get(), alpha=self.alpha_var.get(), padding=padding, out_dir=self._resolve_out(),
         )
 
     def _pick_color(self):

@@ -126,14 +126,41 @@ class Output(unittest.TestCase):
             self.assertTrue(cancelled)
             self.assertEqual(done, 0)
 
-    def test_overwrite_detection_and_padding(self):
+    def test_overwrite_detection(self):
         with tempfile.TemporaryDirectory() as d:
-            s = make(d, frames=100)
+            s = make(d, frames=100, padding=3)
             self.assertEqual(core.existing_files(s), [])
             core.generate(s)
             self.assertEqual(len(core.existing_files(s)), 100)
             self.assertIn("t_64x32_001.png", os.listdir(d))
             self.assertIn("t_64x32_100.png", os.listdir(d))
+
+
+class Padding(unittest.TestCase):
+    def name(self, index, **kw):
+        return core.frame_filename(make("out", **kw), index)
+
+    def test_explicit_padding(self):
+        self.assertEqual([self.name(i, frames=200, padding=4) for i in (1, 23, 134)],
+                         ["t_64x32_0001.png", "t_64x32_0023.png", "t_64x32_0134.png"])
+
+    def test_no_padding(self):
+        self.assertEqual([self.name(i, frames=100, padding=0) for i in (1, 10, 100)],
+                         ["t_64x32_1.png", "t_64x32_10.png", "t_64x32_100.png"])
+
+    def test_padding_never_narrower_than_frame_count(self):
+        s = make("out", frames=100, padding=2)
+        self.assertEqual(core.effective_padding(s), 3)
+        self.assertEqual(core.frame_filename(s, 5), "t_64x32_005.png")
+
+    def test_limits(self):
+        with tempfile.TemporaryDirectory() as d:
+            core.validate(make(d, padding=core.MAX_PADDING))
+            core.validate(make(d, frames=core.MAX_FRAMES))
+            for kw in (dict(padding=core.MAX_PADDING + 1), dict(padding=-1),
+                       dict(frames=core.MAX_FRAMES + 1)):
+                with self.assertRaises(ValueError, msg=kw):
+                    core.validate(make(d, **kw))
 
     def test_unicode_path(self):
         with tempfile.TemporaryDirectory() as d:
