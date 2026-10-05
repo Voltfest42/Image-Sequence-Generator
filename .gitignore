@@ -1,0 +1,12 @@
+# Build environment and outputs
+.venv/
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+
+# Default generator output
+output/
