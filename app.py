@@ -6,11 +6,12 @@ import re
 import sys
 import threading
 import tkinter as tk
-from tkinter import colorchooser, filedialog, messagebox
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
 import core
+import picker
 
 APP_TITLE = "Image Sequence Generator"
 ERROR_COLOR = "#e5484d"
@@ -371,9 +372,9 @@ class App(ctk.CTk):
             initial = "#%02x%02x%02x" % tuple(round(c * 255) for c in core.parse_hex(self.color_var.get()))
         except ValueError:
             initial = core.DEFAULTS["color"]
-        _rgb, hex_code = colorchooser.askcolor(color=initial, parent=self, title="Choose color")
-        if hex_code:
-            self.color_var.set(hex_code.upper())
+        chosen = picker.ask_color(self, initial)
+        if chosen:
+            self.color_var.set(chosen)
 
     def _browse(self):
         start = self._resolve_out()
@@ -482,6 +483,19 @@ def selftest(out_dir: str) -> int:
             except Exception as e:
                 failed = True
                 lines.append(f"FAIL {ft} {depth}-bit: {e!r}")
+    try:                                    # the picker needs Pillow's Tk image support
+        root = App()
+        root.withdraw()
+        dlg = picker.ColorPicker(root, "#123456")
+        dlg.update()
+        ok = dlg.hex_var.get() == "#123456"
+        dlg.destroy()
+        root.destroy()
+        failed |= not ok
+        lines.append(f"{'OK  ' if ok else 'FAIL'} color picker")
+    except Exception as e:
+        failed = True
+        lines.append(f"FAIL color picker: {e!r}")
     with open(os.path.join(out_dir, "selftest.log"), "w") as f:
         f.write("\n".join(lines))
     return 1 if failed else 0
