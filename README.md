@@ -117,4 +117,8 @@ If you need the exact color you typed to survive, use one of the lossless codecs
 | `build.ps1`, `make_icon.py` | Single-file exe build and icon generation. |
 | `tests/` | Unit and smoke tests. |
 
+## License
+
+Released under the [MIT License](LICENSE).
+
 Built with [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter), [OpenCV](https://opencv.org/) (PNG/JPEG encoding), [OpenEXR](https://pypi.org/project/OpenEXR/), NumPy and Pillow, packaged with [PyInstaller](https://pyinstaller.org/).
