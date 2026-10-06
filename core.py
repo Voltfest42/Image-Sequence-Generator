@@ -34,8 +34,33 @@ MAX_DIMENSION = 65535
 MAX_FRAMES = 99999
 MAX_PADDING = 8
 DEFAULT_PADDING = 4
-JPEG_QUALITY = 95
+JPEG_QUALITY_RANGE = (1, 100)
+DEFAULT_JPEG_QUALITY = 95
 PNG_COMPRESSION = 6
+
+# EXR compression codecs, in drop-down order: name -> (OpenEXR constant, lossy, hint).
+# lossy is "no", "yes", or "32" (only lossy for 32-bit float data).
+EXR_CODECS = {
+    "ZIP":   ("ZIP_COMPRESSION",      "no",  "Lossless · good all-rounder"),
+    "PIZ":   ("PIZ_COMPRESSION",      "no",  "Lossless · best for noisy images"),
+    "DWAA":  ("DWAA_COMPRESSION",     "yes", "Lossy · tiny files, may shift colors"),
+    "DWAB":  ("DWAB_COMPRESSION",     "yes", "Lossy · like DWAA, faster on big images"),
+    "HTJ2K": ("HTJ2K256_COMPRESSION", "no",  "Lossless · needs OpenEXR 3.4+ readers"),
+    "ZIPS":  ("ZIPS_COMPRESSION",     "no",  "Lossless · ZIP, one scanline at a time"),
+    "RLE":   ("RLE_COMPRESSION",      "no",  "Lossless · fast, good for flat colors"),
+    "PXR24": ("PXR24_COMPRESSION",    "32",  ""),            # hint depends on depth, see below
+    "None":  ("NO_COMPRESSION",       "no",  "Uncompressed · very large files"),
+}
+EXR_CODEC_NAMES = list(EXR_CODECS)
+DEFAULT_EXR_CODEC = "ZIP"
+
+
+def exr_codec_hint(codec: str, depth: int) -> str:
+    """One-line description of a codec, accounting for bit depth where it matters."""
+    if codec == "PXR24":
+        return ("Lossless at 16-bit · fast" if depth == 16
+                else "Lossy at 32-bit · fast")
+    return EXR_CODECS[codec][2]
 
 
 def default_depth(file_type: str, current: Optional[int] = None) -> int:
@@ -68,6 +93,8 @@ class Settings:
     color: str = "#000000"
     alpha: float = 100.0
     padding: int = 0         # zero-pad frame numbers to this many digits; 0 = no padding
+    jpeg_quality: int = DEFAULT_JPEG_QUALITY     # JPEG only
+    exr_codec: str = DEFAULT_EXR_CODEC           # EXR only; a key of EXR_CODECS
     out_dir: str = "output"
 
 
@@ -151,6 +178,12 @@ def validate(s: Settings):
         raise ValueError(f"{s.file_type} does not support {s.depth}-bit.")
     if s.channels not in fmt["channels"]:
         raise ValueError(f"{s.file_type} does not support {s.channels}.")
+    if s.file_type == "JPEG" and not (
+            JPEG_QUALITY_RANGE[0] <= s.jpeg_quality <= JPEG_QUALITY_RANGE[1]):
+        raise ValueError("JPEG quality must be between "
+                         f"{JPEG_QUALITY_RANGE[0]} and {JPEG_QUALITY_RANGE[1]}.")
+    if s.file_type == "EXR" and s.exr_codec not in EXR_CODECS:
+        raise ValueError(f"Unknown EXR compression '{s.exr_codec}'.")
     parse_hex(s.color)
     if s.res != CUSTOM_RES and s.res not in RESOLUTION_PRESETS:
         raise ValueError(f"Unknown resolution '{s.res}'.")
@@ -198,10 +231,11 @@ def _make_image(s: Settings, width: int, height: int) -> np.ndarray:
     return img
 
 
-def _encode_exr(img: np.ndarray, out_dir: str) -> bytes:
+def _encode_exr(img: np.ndarray, out_dir: str, codec: str) -> bytes:
     import OpenEXR  # imported lazily: only needed for EXR output
 
-    header = {"compression": OpenEXR.ZIP_COMPRESSION, "type": OpenEXR.scanlineimage}
+    header = {"compression": getattr(OpenEXR, EXR_CODECS[codec][0]),
+              "type": OpenEXR.scanlineimage}
     n = img.shape[2]
     if n == 1:
         channels = {"Y": np.ascontiguousarray(img[:, :, 0])}
@@ -219,11 +253,11 @@ def _encode_exr(img: np.ndarray, out_dir: str) -> bytes:
 
 def _encode(s: Settings, img: np.ndarray, out_dir: str) -> bytes:
     if s.file_type == "EXR":
-        return _encode_exr(img, out_dir)
+        return _encode_exr(img, out_dir, s.exr_codec)
     if s.file_type == "PNG":
         ok, buf = cv2.imencode(".png", img, [cv2.IMWRITE_PNG_COMPRESSION, PNG_COMPRESSION])
     else:
-        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, s.jpeg_quality])
     if not ok:
         raise RuntimeError("OpenCV failed to encode the image.")
     return buf.tobytes()

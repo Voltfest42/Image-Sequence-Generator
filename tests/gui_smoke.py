@@ -40,6 +40,33 @@ assert a.channels_var.get() in ("RGB",)       # stays at RGB (was valid)
 a.channels_var.set("RGBA"); a._refresh()
 assert a.alpha_slider.cget("state") == "normal"
 
+# --- format-specific row (JPEG quality / EXR compression) --------------------
+a.type_var.set("PNG"); a._on_type_change("PNG")
+assert a.extra_row.winfo_manager() == "" and a.extra_label.winfo_manager() == ""   # hidden for PNG
+a.type_var.set("JPEG"); a._on_type_change("JPEG")
+assert a.extra_row.winfo_manager() == "grid" and a.jpeg_frame.winfo_manager() == "pack"
+assert a.exr_frame.winfo_manager() == "" and a.extra_label.cget("text") == "JPEG quality"
+assert a.jpeg_label.cget("text") == "95"
+a.jpeg_var.set(40); a._refresh()
+assert a.jpeg_label.cget("text") == "40"
+a.type_var.set("EXR"); a._on_type_change("EXR")
+assert a.exr_frame.winfo_manager() == "pack" and a.jpeg_frame.winfo_manager() == ""
+assert a.extra_label.cget("text") == "Compression"
+assert menu_values(a.codec_menu) == ["ZIP", "PIZ", "DWAA", "DWAB", "HTJ2K", "ZIPS", "RLE", "PXR24", "None"]
+assert a.codec_var.get() == "ZIP" and "Lossless" in a.codec_hint.cget("text")
+a.codec_var.set("PXR24"); a.depth_var.set("32-bit float"); a._refresh()
+assert "Lossy" in a.codec_hint.cget("text")
+a.depth_var.set("16-bit half float"); a._refresh()
+assert "Lossless" in a.codec_hint.cget("text")
+a.codec_var.set("DWAA"); a._refresh()
+assert "Lossy" in a.codec_hint.cget("text")
+a.name_var.set("zz"); a.frames_var.set("2"); a.res_var.set("4k")
+st = a._collect()
+assert (st.exr_codec, st.jpeg_quality, st.file_type) == ("DWAA", 40, "EXR"), st
+a.codec_var.set("ZIP"); a.jpeg_var.set(95)
+a.name_var.set(""); a.frames_var.set("")
+a.type_var.set("PNG"); a._on_type_change("PNG")
+
 # --- numeric-only entries ---------------------------------------------------
 def typed(entry, var, text):
     """Type text one character at a time, like a keyboard."""

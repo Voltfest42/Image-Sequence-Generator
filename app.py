@@ -129,22 +129,51 @@ class App(ctk.CTk):
                                            values=core.FILE_TYPES, command=self._on_type_change)
         self.type_menu.grid(row=4, column=1, sticky="w", pady=5)
 
-        label(5, "Color depth")
+        # Per-format option: JPEG quality or EXR compression (hidden for PNG)
+        self.extra_label = ctk.CTkLabel(body, text="", anchor="w")
+        self.extra_label.grid(row=5, column=0, sticky="w", **pad)
+        self.extra_row = ctk.CTkFrame(body, fg_color="transparent")
+        self.extra_row.grid(row=5, column=1, columnspan=2, sticky="w", pady=5)
+
+        self.jpeg_frame = ctk.CTkFrame(self.extra_row, fg_color="transparent")
+        self.jpeg_var = tk.DoubleVar(value=core.DEFAULT_JPEG_QUALITY)
+        lo, hi = core.JPEG_QUALITY_RANGE
+        self.jpeg_slider = ctk.CTkSlider(self.jpeg_frame, from_=lo, to=hi, number_of_steps=hi - lo,
+                                         variable=self.jpeg_var, width=230,
+                                         command=lambda _v: self._refresh())
+        self.jpeg_slider.pack(side="left")
+        self.jpeg_label = ctk.CTkLabel(self.jpeg_frame, text="", width=70, anchor="w")
+        self.jpeg_label.pack(side="left", padx=10)
+
+        self.exr_frame = ctk.CTkFrame(self.extra_row, fg_color="transparent")
+        self.codec_var = tk.StringVar(value=core.DEFAULT_EXR_CODEC)
+        self.codec_menu = ctk.CTkOptionMenu(self.exr_frame, variable=self.codec_var, width=110,
+                                            values=core.EXR_CODEC_NAMES,
+                                            command=lambda _v: self._refresh())
+        self.codec_menu.pack(side="left")
+        # sized to fit the 340 px-wide column (like the Alpha row), with a fixed height
+        # so a two-line hint doesn't make the window jump
+        self.codec_hint = ctk.CTkLabel(self.exr_frame, text="", width=215, height=40, anchor="w",
+                                       justify="left", wraplength=205,
+                                       text_color=("gray35", "gray65"))
+        self.codec_hint.pack(side="left", padx=(10, 0))
+
+        label(6, "Color depth")
         self.depth_var = tk.StringVar()
         self.depth_menu = ctk.CTkOptionMenu(body, variable=self.depth_var, width=150, values=[""],
                                             command=lambda _v: self._refresh())
-        self.depth_menu.grid(row=5, column=1, sticky="w", pady=5)
+        self.depth_menu.grid(row=6, column=1, sticky="w", pady=5)
 
-        label(6, "Channels")
+        label(7, "Channels")
         self.channels_var = tk.StringVar()
         self.channels_menu = ctk.CTkOptionMenu(body, variable=self.channels_var, width=150,
                                                values=[""], command=lambda _v: self._refresh())
-        self.channels_menu.grid(row=6, column=1, sticky="w", pady=5)
+        self.channels_menu.grid(row=7, column=1, sticky="w", pady=5)
 
         # Color
-        label(7, "Color")
+        label(8, "Color")
         color_row = ctk.CTkFrame(body, fg_color="transparent")
-        color_row.grid(row=7, column=1, columnspan=2, sticky="w", pady=5)
+        color_row.grid(row=8, column=1, columnspan=2, sticky="w", pady=5)
         self.color_var = tk.StringVar(value=core.DEFAULTS["color"])
         self.swatch = ctk.CTkButton(color_row, text="", width=44, height=28, border_width=1,
                                     border_color=("gray60", "gray40"),
@@ -156,9 +185,9 @@ class App(ctk.CTk):
         ctk.CTkButton(color_row, text="Pick...", width=70, command=self._pick_color).pack(side="left")
 
         # Alpha
-        label(8, "Alpha")
+        label(9, "Alpha")
         alpha_row = ctk.CTkFrame(body, fg_color="transparent")
-        alpha_row.grid(row=8, column=1, columnspan=2, sticky="ew", pady=5)
+        alpha_row.grid(row=9, column=1, columnspan=2, sticky="ew", pady=5)
         self.alpha_var = tk.DoubleVar(value=core.DEFAULTS["alpha"])
         self.alpha_slider = ctk.CTkSlider(alpha_row, from_=0, to=100, number_of_steps=100,
                                           variable=self.alpha_var, width=230,
@@ -168,9 +197,9 @@ class App(ctk.CTk):
         self.alpha_label.pack(side="left", padx=10)
 
         # Zero padding
-        label(9, "Zero padding")
+        label(10, "Zero padding")
         pad_row = ctk.CTkFrame(body, fg_color="transparent")
-        pad_row.grid(row=9, column=1, columnspan=2, sticky="w", pady=5)
+        pad_row.grid(row=10, column=1, columnspan=2, sticky="w", pady=5)
         self.pad_on_var = tk.BooleanVar(value=True)
         self.pad_check = ctk.CTkCheckBox(pad_row, text="Pad frame numbers", width=150,
                                          variable=self.pad_on_var, command=self._refresh)
@@ -183,9 +212,9 @@ class App(ctk.CTk):
         self.pad_label.pack(side="left")
 
         # Output directory
-        label(10, "Output folder")
+        label(11, "Output folder")
         out_row = ctk.CTkFrame(body, fg_color="transparent")
-        out_row.grid(row=10, column=1, columnspan=2, sticky="ew", pady=5)
+        out_row.grid(row=11, column=1, columnspan=2, sticky="ew", pady=5)
         out_row.grid_columnconfigure(0, weight=1)
         self.out_var = tk.StringVar(value=os.path.join(app_dir(), "output"))
         self.out_entry = ctk.CTkEntry(out_row, textvariable=self.out_var)
@@ -264,8 +293,32 @@ class App(ctk.CTk):
                   self.hex_entry, self.out_entry):
             w.configure(state=normal)
         for w in (self.res_menu, self.type_menu, self.depth_menu, self.channels_menu,
-                  self.swatch, self.browse_btn, self.pad_check):
+                  self.swatch, self.browse_btn, self.pad_check, self.jpeg_slider, self.codec_menu):
             w.configure(state=normal)
+
+        # format-specific row: JPEG quality / EXR compression / nothing for PNG
+        file_type = self.type_var.get()
+        if file_type in ("JPEG", "EXR"):
+            self.extra_label.grid()
+            self.extra_row.grid()
+            self.extra_label.configure(text="JPEG quality" if file_type == "JPEG" else "Compression")
+        else:
+            self.extra_label.grid_remove()
+            self.extra_row.grid_remove()
+        if file_type == "JPEG":
+            self.jpeg_frame.pack(side="left")
+        else:
+            self.jpeg_frame.pack_forget()
+        if file_type == "EXR":
+            self.exr_frame.pack(side="left")
+        else:
+            self.exr_frame.pack_forget()
+        self.jpeg_label.configure(text=str(int(round(self.jpeg_var.get()))))
+        try:
+            depth = depth_from_label(self.depth_var.get())
+        except ValueError:
+            depth = 16
+        self.codec_hint.configure(text=core.exr_codec_hint(self.codec_var.get(), depth))
 
         pad_on = self.pad_on_var.get()
         self.pad_entry.configure(state="normal" if (pad_on and not busy) else "disabled")
@@ -365,6 +418,7 @@ class App(ctk.CTk):
             aspect=self.aspect_var.get(), file_type=file_type,
             depth=depth_from_label(self.depth_var.get()), channels=self.channels_var.get(),
             color=self.color_var.get(), alpha=self.alpha_var.get(), padding=padding, out_dir=self._resolve_out(),
+            jpeg_quality=int(round(self.jpeg_var.get())), exr_codec=self.codec_var.get(),
         )
 
     def _pick_color(self):
@@ -473,16 +527,18 @@ def selftest(out_dir: str) -> int:
     lines, failed = [], False
     for ft, info in core.FORMATS.items():
         for depth in info["depths"]:
-            try:
-                s = core.Settings(frames=2, name=f"selftest_{ft}_{depth}", res="Custom",
-                                  custom_w=64, custom_h=32, file_type=ft, depth=depth,
-                                  channels="RGBA" if "RGBA" in info["channels"] else "RGB",
-                                  alpha=50, out_dir=out_dir)
-                done = core.generate(s)[0]
-                lines.append(f"OK   {ft} {depth}-bit: {done} frames")
-            except Exception as e:
-                failed = True
-                lines.append(f"FAIL {ft} {depth}-bit: {e!r}")
+            for codec in (core.EXR_CODEC_NAMES if ft == "EXR" else [core.DEFAULT_EXR_CODEC]):
+                tag = f"{ft} {depth}-bit" + (f" {codec}" if ft == "EXR" else "")
+                try:
+                    s = core.Settings(frames=2, name=f"selftest_{tag.replace(' ', '_')}", res="Custom",
+                                      custom_w=64, custom_h=32, file_type=ft, depth=depth,
+                                      channels="RGBA" if "RGBA" in info["channels"] else "RGB",
+                                      alpha=50, exr_codec=codec, out_dir=out_dir)
+                    done = core.generate(s)[0]
+                    lines.append(f"OK   {tag}: {done} frames")
+                except Exception as e:
+                    failed = True
+                    lines.append(f"FAIL {tag}: {e!r}")
     try:                                    # the picker needs Pillow's Tk image support
         root = App()
         root.withdraw()

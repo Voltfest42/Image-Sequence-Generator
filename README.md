@@ -7,6 +7,7 @@ A small Windows desktop app that generates **solid-color / blank image sequences
 ## Features
 
 - **PNG, JPEG and EXR** output, with 8-bit, 16-bit (PNG, EXR half float) and 32-bit float (EXR) depths.
+- **Adjustable JPEG quality** (1–100) and **EXR compression** (ZIP, PIZ, DWAA, DWAB, HTJ2K, ZIPS, RLE, PXR24, or none), each shown only when that file type is selected.
 - **RGB, RGBA or black & white** channels, a color picker with exact hex/RGB entry, and an alpha slider.
 - **Resolution presets** (8k, 4k, 2k, 1k) with any aspect ratio, or a custom width × height.
 - **Zero-padded frame numbers** (`0001`, `0002`, …) so Blender and other tools import the sequence in the right order.
@@ -60,6 +61,8 @@ This creates the virtual environment and installs the dependencies if needed, th
 | **Resolution** | 8k = 8192, 4k = 4096, 2k = 2048, 1k = 1024 on the *long* side, or **Custom** for an exact width × height (each up to 65,535). |
 | **Aspect ratio** | `W:H`, for example `1:1`, `2:1`, `1:4`, `16:9`. Type your own or pick a preset. Disabled for Custom resolution. |
 | **File type** | PNG, JPEG or EXR. |
+| **JPEG quality** | JPEG only, 1–100 (default 95). Lower numbers give smaller files and visible artifacts. |
+| **Compression** | EXR only. See the codec table below. Default ZIP. |
 | **Color depth** | PNG: 8 / 16-bit. JPEG: 8-bit. EXR: 16-bit half float / 32-bit float. |
 | **Channels** | PNG and EXR: RGB, RGBA, BW. JPEG: RGB, BW. |
 | **Color** | Click the swatch or **Pick...** for the color picker, or type a hex code. |
@@ -72,8 +75,24 @@ Files are named `<name>_<resolution>_<number>.<ext>`, for example `mask_4k_0001.
 ### Format notes
 
 - **BW** is converted to grayscale using the luma weights `0.299 R + 0.587 G + 0.114 B`. In EXR it is written as a single `Y` channel.
-- **EXR** files use ZIP compression. Alpha is written as straight (un-premultiplied) alpha.
-- **PNG** files use compression level 6, and **JPEG** files use quality 95 with the extension `.jpeg`.
+- **EXR** alpha is written as straight (un-premultiplied) alpha.
+- **PNG** files use compression level 6 (always lossless). **JPEG** files use the extension `.jpeg`.
+
+#### EXR compression codecs
+
+| Codec | Type | Notes |
+|---|---|---|
+| ZIP | Lossless | Good all-rounder (the default). |
+| PIZ | Lossless | Best for noisy or grainy images. |
+| ZIPS | Lossless | ZIP with one scanline per block. |
+| RLE | Lossless | Fast; good for flat colors. |
+| HTJ2K | Lossless | Newer codec; the reading software needs OpenEXR 3.4 or newer. Written with 256-line blocks. |
+| PXR24 | Lossless at 16-bit, **lossy at 32-bit** | Float32 values are reduced to 24-bit precision. |
+| DWAA | **Lossy** | Very small files. Colors can shift slightly, even for a solid color. |
+| DWAB | **Lossy** | Like DWAA, but faster on large images. |
+| None | Uncompressed | Very large files (an 8k 32-bit RGBA frame is about 1 GB). |
+
+If you need the exact color you typed to survive, use one of the lossless codecs.
 - Memory use while encoding is shown in the summary line. It is the size of one uncompressed frame, so a 32-bit RGBA 8k image needs about 1 GB.
 
 ## Development

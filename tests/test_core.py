@@ -136,6 +136,85 @@ class Output(unittest.TestCase):
             self.assertIn("t_64x32_100.png", os.listdir(d))
 
 
+class Codecs(unittest.TestCase):
+    EXPECTED = [1.0, 128 / 255, 0.0, 0.5]       # make() default: #FF8000, alpha 50
+
+    def read(self, path):
+        import OpenEXR
+        f = OpenEXR.File(path)
+        return f.header()["compression"], f.channels()["RGBA"].pixels.astype(np.float32)
+
+    def test_every_codec_writes_the_right_compression(self):
+        import OpenEXR
+        for depth in (16, 32):
+            for codec, (attr, lossy, _hint) in core.EXR_CODECS.items():
+                comp, px = self.run_one(codec, depth)
+                self.assertEqual(comp, getattr(OpenEXR, attr), (codec, depth))
+                err = float(np.abs(px[0, 0] - self.EXPECTED).max())
+                limit = 3e-3 if (lossy == "yes" or (lossy == "32" and depth == 32)) else 1e-3
+                self.assertLessEqual(err, limit, (codec, depth, err))
+                if lossy == "no" or (lossy == "32" and depth == 16):
+                    # lossless: identical to what the same pixel stores as in this precision
+                    exact = np.array(self.EXPECTED, dtype=np.float16 if depth == 16 else np.float32)
+                    np.testing.assert_array_equal(px[0, 0], exact.astype(np.float32), (codec, depth))
+
+    def run_one(self, codec, depth):
+        with tempfile.TemporaryDirectory() as d:
+            core.generate(make(d, frames=1, file_type="EXR", depth=depth, exr_codec=codec))
+            (name,) = os.listdir(d)
+            return self.read(os.path.join(d, name))
+
+    def test_uncompressed_is_largest(self):
+        sizes = {}
+        for codec in ("None", "ZIP"):
+            with tempfile.TemporaryDirectory() as d:
+                core.generate(make(d, frames=1, file_type="EXR", depth=32, exr_codec=codec,
+                                   custom_w=256, custom_h=256))
+                sizes[codec] = os.path.getsize(os.path.join(d, os.listdir(d)[0]))
+        self.assertGreater(sizes["None"], 100 * sizes["ZIP"])
+
+    def test_pxr24_hint_depends_on_depth(self):
+        self.assertIn("Lossless", core.exr_codec_hint("PXR24", 16))
+        self.assertIn("Lossy", core.exr_codec_hint("PXR24", 32))
+        for codec in core.EXR_CODEC_NAMES:
+            self.assertTrue(core.exr_codec_hint(codec, 16))
+
+    def test_unknown_codec_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(ValueError):
+                core.validate(make(d, file_type="EXR", depth=16, exr_codec="LZW"))
+
+
+class JpegQuality(unittest.TestCase):
+    def decode(self, quality):
+        with tempfile.TemporaryDirectory() as d:
+            core.generate(make(d, frames=1, file_type="JPEG", depth=8, channels="RGB",
+                               color="#E8793A", jpeg_quality=quality))
+            with open(os.path.join(d, os.listdir(d)[0]), "rb") as f:
+                raw = f.read()
+        img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+        return raw, int(np.abs(img[0, 0].astype(int) - (0x3A, 0x79, 0xE8)).max())
+
+    def test_quality_changes_output(self):
+        raw_hi, err_hi = self.decode(100)
+        raw_lo, err_lo = self.decode(1)
+        self.assertNotEqual(raw_hi, raw_lo)
+        self.assertLess(err_hi, 3)
+        self.assertGreater(err_lo, err_hi)
+
+    def test_quality_range(self):
+        with tempfile.TemporaryDirectory() as d:
+            for q in (1, 100):
+                core.validate(make(d, file_type="JPEG", depth=8, channels="RGB", jpeg_quality=q))
+            for q in (0, 101, -5):
+                with self.assertRaises(ValueError, msg=q):
+                    core.validate(make(d, file_type="JPEG", depth=8, channels="RGB", jpeg_quality=q))
+
+    def test_quality_ignored_for_other_formats(self):
+        with tempfile.TemporaryDirectory() as d:
+            core.validate(make(d, file_type="PNG", jpeg_quality=999))
+
+
 class Padding(unittest.TestCase):
     def name(self, index, **kw):
         return core.frame_filename(make("out", **kw), index)
