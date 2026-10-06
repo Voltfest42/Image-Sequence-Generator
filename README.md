@@ -1,6 +1,6 @@
 # Image Sequence Generator
 
-A small Windows desktop app that generates **solid-color / blank image sequences** (PNG, JPEG or OpenEXR) in bulk. I built it for 3D texturing and compositing work in Blender, where you often need a few hundred identical placeholder frames, masks or base layers with predictable file names.
+A small Windows desktop app that generates **solid-color / blank image sequences** (PNG, JPEG or OpenEXR) in bulk. I built it for 3D texturing and compositing work in Blender, where you sometimes need a few hundred identical placeholder frames, masks or base layers with predictable file names.
 
 ![Screenshot](docs/screenshot.png)
 
